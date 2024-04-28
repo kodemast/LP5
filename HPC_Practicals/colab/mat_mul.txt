@@ -1,0 +1,139 @@
+#!pip install git+https://github.com/andreinechaev/nvcc4jupyter.git
+!pip install nvcc4jupyter
+!nvcc --version
+
+------------------------------------------------------------------------------------------------
+
+%load_ext nvcc4jupyter
+
+------------------------------------------------------------------------------------------------
+
+%%cuda
+
+#include <iostream>
+using namespace std;
+
+const int N = 4; // Size of matrices
+
+// CUDA kernel to perform matrix multiplication
+__global__ void matrixMul(int *d_a, int *d_b, int *d_c) {
+  int row = blockIdx.y * blockDim.y + threadIdx.y;
+  int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+  if (row < N && col < N) {
+    int sum = 0;
+    for (int k = 0; k < N; k++) {
+      // Access elements using 1D indexing with appropriate offset calculation
+      sum += d_a[row * N + k] * d_b[k * N + col];
+    }
+    d_c[row * N + col] = sum;
+  }
+}
+
+int main() {
+  // Host arrays
+  int *h_a, *h_b, *h_c;
+
+  // Device array
+  int *d_a, *d_b, *d_c;
+
+  // Allocate memory on host
+  h_a = new int[N * N];
+  h_b = new int[N * N];
+  h_c = new int[N * N];
+
+  // Initialize host arrays (replace with your initialization logic)
+  for (int i = 0; i < N * N; i++) {
+    h_a[i] = (rand() % 10) + 2;
+    h_b[i] = (rand() % 10) + 2;
+  }
+
+  // Allocate memory on device
+  cudaMalloc((void**)&d_a, N * N * sizeof(int));
+  cudaMalloc((void**)&d_b, N * N * sizeof(int));
+  cudaMalloc((void**)&d_c, N * N * sizeof(int));
+
+  // Copy data from host to device
+  cudaMemcpy(d_a, h_a, N * N * sizeof(int), cudaMemcpyHostToDevice);
+  cudaMemcpy(d_b, h_b, N * N * sizeof(int), cudaMemcpyHostToDevice);
+
+  // Threads per ThreadBlock dimension
+  int THREADS = 16;
+
+  // Blocks per grid dimension
+  int BLOCKS = (N + THREADS - 1) / THREADS;
+
+
+  // grid and block dimensions
+  dim3 threadsPerBlock(THREADS, THREADS);
+  dim3 numBlocks(BLOCKS, BLOCKS);
+
+  // Create CUDA events for timing
+  cudaEvent_t start, stop;
+  cudaEventCreate(&start);
+  cudaEventCreate(&stop);
+
+  // Record start event
+  cudaEventRecord(start, 0);
+
+
+  // Launch kernel
+  matrixMul<<<numBlocks, threadsPerBlock>>>(d_a, d_b, d_c);
+
+
+  // Record stop event
+  cudaEventRecord(stop, 0);
+
+  // Synchronize events
+  cudaEventSynchronize(stop);
+
+  // Calculate elapsed time
+  float elapsedTime;
+  cudaEventElapsedTime(&elapsedTime, start, stop);
+  cout << "Elapsed Time: " << elapsedTime << " ms\n";
+
+  // Synchronize to ensure kernel execution finishes
+  cudaDeviceSynchronize();
+
+  // Copy data from device to host
+  cudaMemcpy(h_c, d_c, N * N * sizeof(int), cudaMemcpyDeviceToHost);
+
+
+  cout << "Matrix A:\n";
+  for (int i = 0; i < N; i++) {
+    for (int j = 0; j < N; j++) {
+      cout << h_a[i * N + j] << " ";
+    }
+    cout << endl;
+  }
+
+  cout << "Matrix B:\n";
+  for (int i = 0; i < N; i++) {
+    for (int j = 0; j < N; j++) {
+      cout << h_b[i * N + j] << " ";
+    }
+    cout << endl;
+  }
+
+  // Print the result (optional)
+  cout << "Matrix C (Result of A * B):\n";
+  for (int i = 0; i < N; i++) {
+    for (int j = 0; j < N; j++) {
+      cout << h_c[i * N + j] << " ";
+    }
+    cout << endl;
+  }
+
+  // Free device memory
+  cudaFree(d_a);
+  cudaFree(d_b);
+  cudaFree(d_c);
+
+  // Free host memory
+  delete[] h_a;
+  delete[] h_b;
+  delete[] h_c;
+
+  return 0;
+}
+

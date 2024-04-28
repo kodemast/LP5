@@ -1,0 +1,94 @@
+#!pip install git+https://github.com/andreinechaev/nvcc4jupyter.git
+!pip install nvcc4jupyter
+!nvcc --version
+
+------------------------------------------------------------------------------------------------
+
+%load_ext nvcc4jupyter
+
+------------------------------------------------------------------------------------------------
+
+%%cuda
+
+#include <stdio.h>
+
+const int N = 1000;
+
+// here N is the number of elements and also the number of threads we will use to compute
+
+__global__ void Vector_Addition(const int *d_a, const int *d_b, int *d_c)
+{
+      int tid = blockIdx.x * blockDim.x + threadIdx.x;
+
+      // Boundary Check
+      if (tid < N)
+            d_c[tid] = d_a[tid] + d_b[tid];
+}
+
+int main()
+{
+      int h_a[N], h_b[N], h_c[N];
+
+      int *d_a, *d_b, *d_c;
+
+      const int byte = sizeof(int) * N;
+
+      cudaMalloc((void **)&d_a, byte);
+      cudaMalloc((void **)&d_b, byte);
+      cudaMalloc((void **)&d_c, byte);
+
+      for (int i = 0; i < N; i++)
+      {
+            h_a[i] = rand() % 100;
+            h_b[i] = rand() % 100;
+      }
+
+      cudaMemcpy(d_a, h_a, byte, cudaMemcpyHostToDevice);
+      cudaMemcpy(d_b, h_b, byte, cudaMemcpyHostToDevice);
+
+      int NUM_THREADS = 1024;
+
+        // padding extra Thread Block to the grid if N cannot evenly be divided by NUM_THREADS
+        // eg. N = 1025, NUM_THREADS = 1024
+
+      int NUM_BLOCKS = (N + NUM_THREADS - 1) / NUM_THREADS;
+
+
+      // Create CUDA events for timing
+      cudaEvent_t start, stop;
+      cudaEventCreate(&start);
+      cudaEventCreate(&stop);
+
+      // Record start event
+      cudaEventRecord(start, 0);
+
+
+      Vector_Addition<<<NUM_BLOCKS, NUM_THREADS>>>(d_a, d_b, d_c);
+
+
+      // Record stop event
+      cudaEventRecord(stop, 0);
+
+      // Synchronize events
+      cudaEventSynchronize(stop);
+
+      // Calculate elapsed time
+      float elapsedTime;
+      cudaEventElapsedTime(&elapsedTime, start, stop);
+
+
+      // Copy result back to Host
+      cudaMemcpy(h_c, d_c, byte, cudaMemcpyDeviceToHost);
+
+      for (int i = 0; i < N; i++)
+            printf("%d + %d = %d\n", h_a[i], h_b[i], h_c[i]);
+
+      printf("Elapsed Time: %f ms\n", elapsedTime);
+
+      cudaFree(d_a);
+      cudaFree(d_b);
+      cudaFree(d_c);
+
+      return 0;
+}
+
